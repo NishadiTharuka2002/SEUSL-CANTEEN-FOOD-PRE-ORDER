@@ -32,21 +32,34 @@ const server = http.createServer(app);
 connectDB();
 
 // Setup Socket.io
-const io = new Server(server, {
-  cors: {
-    origin: '*',
-    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE']
-  }
-});
-
-// Attach io instance to express app so controllers can trigger real-time events
-app.set('io', io);
-initSocketIO(io);
+let io;
+try {
+  io = new Server(server, {
+    cors: {
+      origin: '*',
+      methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE']
+    }
+  });
+  app.set('io', io);
+  initSocketIO(io);
+} catch (e) {
+  console.warn('Socket.io initialization notice:', e.message);
+}
 
 // Middlewares
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Ensure MongoDB is connected for every serverless invocation
+app.use(async (req, res, next) => {
+  try {
+    await connectDB();
+  } catch (err) {
+    console.error('DB connect middleware error:', err);
+  }
+  next();
+});
 
 // Register Module API Endpoints
 app.use('/api/auth', authRoutes);
@@ -78,12 +91,15 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Internal Server Error', error: err.message });
 });
 
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-  console.log(`=======================================================`);
-  console.log(`  SEUSL Canteen Pre-order & Queue System Server Active  `);
-  console.log(`  Port: ${PORT} | Mode: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`=======================================================`);
-});
+// Start listening if not running on Vercel Serverless
+if (!process.env.VERCEL) {
+  const PORT = process.env.PORT || 5000;
+  server.listen(PORT, () => {
+    console.log(`=======================================================`);
+    console.log(`  SEUSL Canteen Pre-order & Queue System Server Active  `);
+    console.log(`  Port: ${PORT} | Mode: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`=======================================================`);
+  });
+}
 
 module.exports = app;
