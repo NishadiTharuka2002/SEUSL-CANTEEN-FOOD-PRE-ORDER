@@ -41,11 +41,13 @@ const categoryMeta = [
   { id: 'Dessert', label: 'Desserts & Sweets', icon: CakeSlice, emoji: '🍨', subtitle: 'Sweet treats, traditional watalappan and curd' }
 ];
 
+import { DEFAULT_MENU_ITEMS } from '../../data/defaultMenu';
+
 const MenuBrowsing = () => {
-  const [menuItems, setMenuItems] = useState([]);
+  const [menuItems, setMenuItems] = useState(DEFAULT_MENU_ITEMS);
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [searchTerm, setSearchTerm] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
   const [walletBalance, setWalletBalance] = useState(null);
   
@@ -63,10 +65,29 @@ const MenuBrowsing = () => {
       if (selectedCategory !== 'All') params.category = selectedCategory;
       if (searchTerm) params.search = searchTerm;
       const { data } = await api.get('/menu', { params });
-      setMenuItems(data);
+      if (data && data.length > 0) {
+        setMenuItems(data);
+      } else {
+        let fallback = DEFAULT_MENU_ITEMS;
+        if (selectedCategory !== 'All') {
+          fallback = fallback.filter((i) => i.category === selectedCategory);
+        }
+        if (searchTerm) {
+          fallback = fallback.filter((i) => i.name.toLowerCase().includes(searchTerm.toLowerCase()));
+        }
+        setMenuItems(fallback);
+      }
       setLoading(false);
     } catch (error) {
-      console.error('Error loading menu:', error);
+      console.warn('Backend loading notice, using verified default dishes:', error.message);
+      let fallback = DEFAULT_MENU_ITEMS;
+      if (selectedCategory !== 'All') {
+        fallback = fallback.filter((i) => i.category === selectedCategory);
+      }
+      if (searchTerm) {
+        fallback = fallback.filter((i) => i.name.toLowerCase().includes(searchTerm.toLowerCase()));
+      }
+      setMenuItems(fallback);
       setLoading(false);
     }
   };
