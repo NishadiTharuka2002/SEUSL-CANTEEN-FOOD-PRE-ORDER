@@ -6,12 +6,22 @@
  * ====================================================================
  */
 
+const dns = require('dns');
+try {
+  dns.setServers(['8.8.8.8', '8.8.4.4', '1.1.1.1']);
+} catch (e) {
+  // fallback
+}
+
 const mongoose = require('mongoose');
 
-const MONGO_URI =
+const SRV_URI =
   process.env.MONGO_URI ||
   process.env.MONGODB_URI ||
   'mongodb+srv://tharukanishadi2023_db_user:Nishadi12345@cluster0.xj4reyt.mongodb.net/university_canteen?retryWrites=true&w=majority';
+
+const DIRECT_URI =
+  'mongodb://tharukanishadi2023_db_user:Nishadi12345@ac-n9scwnj-shard-00-00.xj4reyt.mongodb.net:27017,ac-n9scwnj-shard-00-01.xj4reyt.mongodb.net:27017,ac-n9scwnj-shard-00-02.xj4reyt.mongodb.net:27017/university_canteen?ssl=true&replicaSet=atlas-m9cwnj-shard-0&authSource=admin&retryWrites=true&w=majority';
 
 const menuItemSchema = new mongoose.Schema(
   {
@@ -322,9 +332,14 @@ const verifiedMenuItems = [
 
 const updateDatabase = async () => {
   try {
-    console.log('Connecting to MongoDB Atlas...');
-    await mongoose.connect(MONGO_URI);
-    console.log('[Connected] Updating menuitems collection...');
+    console.log('Connecting to MongoDB Atlas (Google Public DNS 8.8.8.8 enabled)...');
+    try {
+      await mongoose.connect(SRV_URI, { serverSelectionTimeoutMS: 5000 });
+    } catch (srvErr) {
+      console.warn('SRV lookup failed on local ISP, connecting via direct Atlas shards...');
+      await mongoose.connect(DIRECT_URI, { serverSelectionTimeoutMS: 8000 });
+    }
+    console.log('[Connected] Updating menuitems collection in MongoDB Atlas...');
 
     // Clear old mismatched dishes
     await MenuItem.deleteMany({});
