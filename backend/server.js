@@ -85,3 +85,5 @@ server.listen(PORT, () => {
   console.log(`  Port: ${PORT} | Mode: ${process.env.NODE_ENV || 'development'}`);
   console.log(`=======================================================`);
 });
+
+module.exports = app;
