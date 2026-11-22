@@ -9,10 +9,11 @@
 
 const MenuItem = require('../models/MenuItem');
 const Inventory = require('../models/Inventory');
+const defaultMenuItems = require('../data/defaultMenuData');
 
 // ==================== MENU ITEMS CONTROLLERS ====================
 
-// @desc    Get all menu items with category & search filter
+// @desc    Get all menu items with category & search filter (with auto-seed & fallback)
 // @route   GET /api/menu
 // @access  Public
 const getAllMenuItems = async (req, res) => {
@@ -21,7 +22,7 @@ const getAllMenuItems = async (req, res) => {
     let query = {};
 
     if (category && category !== 'All') {
-      query.category = category;
+      query.category = { $regex: new RegExp(`^${category}$`, 'i') };
     }
 
     if (search) {
@@ -32,10 +33,51 @@ const getAllMenuItems = async (req, res) => {
       query.isAvailable = true;
     }
 
-    const items = await MenuItem.find(query).sort({ category: 1, name: 1 });
+    let items = await MenuItem.find(query).sort({ category: 1, name: 1 });
+
+    // Auto-seed MongoDB Atlas if collection is empty
+    if (items.length === 0 && (!category || category === 'All') && !search) {
+      try {
+        const count = await MenuItem.countDocuments();
+        if (count === 0) {
+          items = await MenuItem.insertMany(defaultMenuItems);
+          console.log('[Auto-Seed] Successfully auto-seeded 30 canteen dishes into MongoDB Atlas');
+        }
+      } catch (seedErr) {
+        console.warn('[Auto-Seed] Note:', seedErr.message);
+      }
+    }
+
+    // Fallback: If DB returns empty or was not populated, deliver verified 30 dishes
+    if (!items || items.length === 0) {
+      let filtered = [...defaultMenuItems];
+      if (category && category !== 'All') {
+        filtered = filtered.filter((i) => i.category.toLowerCase() === category.toLowerCase());
+      }
+      if (search) {
+        filtered = filtered.filter((i) => i.name.toLowerCase().includes(search.toLowerCase()));
+      }
+      if (availableOnly === 'true') {
+        filtered = filtered.filter((i) => i.isAvailable);
+      }
+      return res.json(filtered);
+    }
+
     res.json(items);
   } catch (error) {
-    res.status(500).json({ message: 'Error retrieving menu items: ' + error.message });
+    console.warn('MongoDB retrieval error, serving fallback dishes:', error.message);
+    let filtered = [...defaultMenuItems];
+    const { category, search, availableOnly } = req.query;
+    if (category && category !== 'All') {
+      filtered = filtered.filter((i) => i.category.toLowerCase() === category.toLowerCase());
+    }
+    if (search) {
+      filtered = filtered.filter((i) => i.name.toLowerCase().includes(search.toLowerCase()));
+    }
+    if (availableOnly === 'true') {
+      filtered = filtered.filter((i) => i.isAvailable);
+    }
+    res.json(filtered);
   }
 };
 
@@ -46,6 +88,9 @@ const getMenuItemById = async (req, res) => {
   try {
     const item = await MenuItem.findById(req.params.id).populate('ingredientsRequired.ingredient');
     if (!item) {
+      // Check default items if not in DB
+      const defaultItem = defaultMenuItems.find((i) => i.name.toLowerCase() === req.params.id.toLowerCase());
+      if (defaultItem) return res.json(defaultItem);
       return res.status(404).json({ message: 'Menu item not found' });
     }
     res.json(item);

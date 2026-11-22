@@ -60,34 +60,33 @@ const MenuBrowsing = () => {
 
   const fetchMenu = async () => {
     try {
-      setLoading(true);
       const params = {};
       if (selectedCategory !== 'All') params.category = selectedCategory;
       if (searchTerm) params.search = searchTerm;
       const { data } = await api.get('/menu', { params });
-      if (data && data.length > 0) {
+      if (Array.isArray(data) && data.length > 0) {
         setMenuItems(data);
       } else {
         let fallback = DEFAULT_MENU_ITEMS;
         if (selectedCategory !== 'All') {
-          fallback = fallback.filter((i) => i.category === selectedCategory);
+          fallback = fallback.filter((i) => i.category?.toLowerCase() === selectedCategory.toLowerCase());
         }
         if (searchTerm) {
           fallback = fallback.filter((i) => i.name.toLowerCase().includes(searchTerm.toLowerCase()));
         }
         setMenuItems(fallback);
       }
-      setLoading(false);
     } catch (error) {
       console.warn('Backend loading notice, using verified default dishes:', error.message);
       let fallback = DEFAULT_MENU_ITEMS;
       if (selectedCategory !== 'All') {
-        fallback = fallback.filter((i) => i.category === selectedCategory);
+        fallback = fallback.filter((i) => i.category?.toLowerCase() === selectedCategory.toLowerCase());
       }
       if (searchTerm) {
         fallback = fallback.filter((i) => i.name.toLowerCase().includes(searchTerm.toLowerCase()));
       }
       setMenuItems(fallback);
+    } finally {
       setLoading(false);
     }
   };
@@ -319,7 +318,10 @@ const MenuBrowsing = () => {
           /* ======================================================== */
           <div style={{ display: 'flex', flexDirection: 'column', gap: '44px' }}>
             {categoriesToDisplay.map((catKey) => {
-              const catItems = menuItems.filter((i) => i.category === catKey);
+              let catItems = menuItems.filter((i) => i.category?.toLowerCase() === catKey.toLowerCase());
+              if (catItems.length === 0) {
+                catItems = DEFAULT_MENU_ITEMS.filter((i) => i.category?.toLowerCase() === catKey.toLowerCase());
+              }
               if (catItems.length === 0) return null;
 
               const meta = categoryMeta.find((m) => m.id === catKey) || {

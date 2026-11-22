@@ -1,7 +1,30 @@
 import axios from 'axios';
 import { io } from 'socket.io-client';
 
-const BACKEND_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+/**
+ * Intelligent Backend Host URL Resolver:
+ * - If VITE_API_URL is configured in environment, use it.
+ * - If running in browser and NOT on localhost / 127.0.0.1 (e.g. deployed on Vercel),
+ *   automatically route to the live Vercel backend.
+ * - Otherwise (local development), default to http://localhost:5000.
+ */
+const getBackendUrl = () => {
+  if (import.meta.env.VITE_API_URL) {
+    return import.meta.env.VITE_API_URL;
+  }
+
+  if (
+    typeof window !== 'undefined' &&
+    window.location.hostname !== 'localhost' &&
+    window.location.hostname !== '127.0.0.1'
+  ) {
+    return 'https://seusl-canteen-backend.vercel.app';
+  }
+
+  return 'http://localhost:5000';
+};
+
+const BACKEND_URL = getBackendUrl();
 const API_BASE_URL = `${BACKEND_URL.replace(/\/$/, '')}/api`;
 const SOCKET_URL = BACKEND_URL.replace(/\/$/, '');
 
