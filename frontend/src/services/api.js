@@ -3,16 +3,13 @@ import { io } from 'socket.io-client';
 
 /**
  * Intelligent Backend Host URL Resolver:
- * - If VITE_API_URL is configured in environment, use it.
  * - If running in browser and NOT on localhost / 127.0.0.1 (e.g. deployed on Vercel),
- *   automatically route to the live Vercel backend.
+ *   ALWAYS route directly to the active live production Vercel backend.
+ * - If VITE_API_URL is configured, sanitize it (ensure https:// protocol and valid target).
  * - Otherwise (local development), default to http://localhost:5000.
  */
 const getBackendUrl = () => {
-  if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL;
-  }
-
+  // 1. In browser production deployments (e.g. *.vercel.app)
   if (
     typeof window !== 'undefined' &&
     window.location.hostname !== 'localhost' &&
@@ -21,6 +18,20 @@ const getBackendUrl = () => {
     return 'https://seusl-canteen-backend.vercel.app';
   }
 
+  // 2. Check environment variable
+  let envUrl = import.meta.env.VITE_API_URL;
+  if (envUrl && typeof envUrl === 'string') {
+    envUrl = envUrl.trim();
+    if (envUrl.includes('seusl-canteen-food-pre-order')) {
+      return 'https://seusl-canteen-backend.vercel.app';
+    }
+    if (!envUrl.startsWith('http://') && !envUrl.startsWith('https://')) {
+      envUrl = `https://${envUrl}`;
+    }
+    return envUrl;
+  }
+
+  // 3. Local fallback
   return 'http://localhost:5000';
 };
 
@@ -56,7 +67,17 @@ api.interceptors.request.use(
 
 // Response interceptor for graceful error handling
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // Guard against SPA fallback returning HTML instead of JSON
+    if (
+      typeof response.data === 'string' &&
+      (response.data.includes('<!DOCTYPE html>') || response.data.includes('<html'))
+    ) {
+      console.warn('API returned HTML page instead of JSON API response. Rejecting to activate fallbacks.');
+      return Promise.reject(new Error('Invalid HTML response from API'));
+    }
+    return response;
+  },
   (error) => {
     if (error.response && error.response.status === 401) {
       console.warn('Authentication token invalid or user removed from DB.');

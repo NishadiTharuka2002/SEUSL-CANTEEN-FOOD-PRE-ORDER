@@ -23,7 +23,8 @@ import {
   ChefHat, 
   Sparkles,
   Ticket,
-  PlusCircle
+  PlusCircle,
+  RefreshCw
 } from 'lucide-react';
 
 const DEFAULT_SLOTS = [
@@ -50,30 +51,37 @@ const CheckoutSlotBooking = () => {
 
   // Confirmed Order State
   const [confirmedOrder, setConfirmedOrder] = useState(() => {
-    // Only restore previous order if cart is empty
-    const saved = sessionStorage.getItem('canteen_last_confirmed_order');
-    return saved ? JSON.parse(saved) : null;
+    try {
+      const saved = sessionStorage.getItem('canteen_last_confirmed_order');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
   });
 
   const loadData = async () => {
     try {
       setErrorMsg('');
 
-      // 1. Fetch available slots
+      // 1. Fetch available slots safely
       try {
         const slotsRes = await api.get('/orders/slots');
-        if (slotsRes.data && slotsRes.data.length > 0) {
+        if (slotsRes && slotsRes.data && Array.isArray(slotsRes.data) && slotsRes.data.length > 0) {
           setSlots(slotsRes.data);
-          setSelectedSlotId(slotsRes.data[0]._id);
+          const first = slotsRes.data[0];
+          setSelectedSlotId(first._id || first.id || DEFAULT_SLOTS[0]._id);
+        } else {
+          setSlots(DEFAULT_SLOTS);
         }
       } catch (e) {
         console.warn('Using default pickup slots:', e.message);
+        setSlots(DEFAULT_SLOTS);
       }
 
       // 2. Fetch wallet balance
       try {
         const walletRes = await api.get('/wallet');
-        if (walletRes.data && typeof walletRes.data.balance === 'number') {
+        if (walletRes && walletRes.data && typeof walletRes.data.balance === 'number') {
           setWalletBalance(walletRes.data.balance);
           if (walletRes.data.balance < subtotal) {
             setPaymentMethod('CASH');
@@ -90,15 +98,11 @@ const CheckoutSlotBooking = () => {
   };
 
   useEffect(() => {
-    // If cart has items, we are checking out a new order - clear old confirmed view
-    if (cartItems.length > 0) {
+    if (cartItems && cartItems.length > 0) {
       setConfirmedOrder(null);
       loadData();
-    } else if (!confirmedOrder) {
-      // Cart is empty and no confirmed order to show, redirect to cart
-      navigate('/cart');
     }
-  }, [cartItems.length]);
+  }, [cartItems?.length]);
 
   // Quick 1-click Top-up right from checkout
   const handleQuickAddBalance = async () => {
@@ -111,12 +115,15 @@ const CheckoutSlotBooking = () => {
       setPaymentMethod('WALLET');
       setErrorMsg('');
       alert('Added Rs. 1,000 to your wallet! You can now pay using your wallet.');
-    } catch (err) {
+    } catch {
       setWalletBalance((prev) => prev + 1000);
       setPaymentMethod('WALLET');
       setErrorMsg('');
     }
   };
+
+  // Safe active slots array
+  const safeSlots = Array.isArray(slots) && slots.length > 0 ? slots : DEFAULT_SLOTS;
 
   // Submit Pre-Order
   const handleSubmitOrder = async (e) => {
@@ -124,8 +131,8 @@ const CheckoutSlotBooking = () => {
     setErrorMsg('');
 
     let slotIdToUse = selectedSlotId;
-    if (!slotIdToUse && slots.length > 0) {
-      slotIdToUse = slots[0]._id;
+    if (!slotIdToUse && safeSlots.length > 0) {
+      slotIdToUse = safeSlots[0]._id || safeSlots[0].id;
     }
     if (!slotIdToUse) {
       slotIdToUse = DEFAULT_SLOTS[0]._id;
@@ -137,7 +144,7 @@ const CheckoutSlotBooking = () => {
       setPaymentMethod('CASH');
     }
 
-    const chosenSlot = slots.find((s) => s._id === slotIdToUse) || DEFAULT_SLOTS[0];
+    const chosenSlot = safeSlots.find((s) => (s._id || s.id) === slotIdToUse) || DEFAULT_SLOTS[0];
 
     try {
       setSubmitting(true);
@@ -165,7 +172,7 @@ const CheckoutSlotBooking = () => {
       const fallbackOrder = {
         _id: 'ord_' + Date.now(),
         orderNumber: 'SEU-ORD-' + Date.now().toString().slice(-4) + Math.floor(10 + Math.random() * 90),
-        items: cartItems.map((i) => ({
+        items: (Array.isArray(cartItems) ? cartItems : []).map((i) => ({
           menuItem: i.menuItemId || i._id,
           name: i.name,
           price: i.price,
@@ -191,9 +198,11 @@ const CheckoutSlotBooking = () => {
   };
 
   // ========================================================
-  // ORDER CONFIRMED SUCCESS VIEW
+  // VIEW 1: CONFIRMED ORDER RECEIPT
   // ========================================================
   if (confirmedOrder) {
+    const safeOrderItems = Array.isArray(confirmedOrder.items) ? confirmedOrder.items : [];
+
     return (
       <div className="container" style={{ maxWidth: '650px', marginTop: '20px', paddingBottom: '60px' }}>
         <div className="card" style={{
@@ -245,14 +254,14 @@ const CheckoutSlotBooking = () => {
               <span>OFFICIAL PICKUP TOKEN</span>
             </div>
             <div style={{ fontSize: '2.5rem', fontWeight: 900, letterSpacing: '2px', margin: '8px 0' }}>
-              {confirmedOrder.orderNumber}
+              {confirmedOrder.orderNumber || 'SEU-ORD-LIVE'}
             </div>
             <div style={{ fontSize: '0.85rem', opacity: 0.9 }}>
               Present this token number at the canteen counter to collect your meal.
             </div>
           </div>
 
-          {/* Order Details Receipt Box */}
+          {/* Order Details Breakdown */}
           <div style={{
             background: '#f8fafc',
             border: '1px solid var(--border)',
@@ -263,7 +272,7 @@ const CheckoutSlotBooking = () => {
           }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontSize: '0.9rem' }}>
               <span style={{ color: 'var(--text-muted)' }}>Pickup Time Slot:</span>
-              <strong style={{ color: '#2563eb' }}>{confirmedOrder.pickupTime}</strong>
+              <strong style={{ color: '#2563eb' }}>{confirmedOrder.pickupTime || '12:00 PM - 12:20 PM'}</strong>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontSize: '0.9rem' }}>
@@ -274,7 +283,7 @@ const CheckoutSlotBooking = () => {
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontSize: '0.9rem' }}>
               <span style={{ color: 'var(--text-muted)' }}>Payment Status:</span>
               <span className={`badge ${confirmedOrder.paymentStatus === 'PAID' ? 'badge-ready' : 'badge-confirmed'}`}>
-                {confirmedOrder.paymentStatus}
+                {confirmedOrder.paymentStatus || 'PAID'}
               </span>
             </div>
 
@@ -283,7 +292,7 @@ const CheckoutSlotBooking = () => {
               <div style={{ fontSize: '0.85rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: '8px' }}>
                 ITEMS ORDERED:
               </div>
-              {confirmedOrder.items && confirmedOrder.items.map((it, idx) => (
+              {safeOrderItems.map((it, idx) => (
                 <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.88rem', marginBottom: '6px' }}>
                   <span>{it.quantity}x {it.name}</span>
                   <span style={{ fontWeight: 600 }}>Rs. {it.subtotal || (it.price * it.quantity)}</span>
@@ -353,7 +362,27 @@ const CheckoutSlotBooking = () => {
   }
 
   // ========================================================
-  // CHECKOUT & SLOT BOOKING FORM VIEW
+  // VIEW 2: EMPTY CART FALLBACK (Prevents Blank Screen on Direct Navigation)
+  // ========================================================
+  if (!cartItems || cartItems.length === 0) {
+    return (
+      <div className="container" style={{ maxWidth: '600px', marginTop: '40px', textAlign: 'center' }}>
+        <div className="card" style={{ padding: '40px 24px' }}>
+          <ShoppingBag size={56} color="#94a3b8" style={{ margin: '0 auto 16px' }} />
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 800, marginBottom: '8px' }}>Your Cart is Empty</h2>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '24px', fontSize: '0.95rem' }}>
+            Please select your favorite meal items from the canteen menu before proceeding to pickup slot booking.
+          </p>
+          <Link to="/menu" className="btn btn-primary" style={{ padding: '12px 28px', fontSize: '1rem' }}>
+            Browse Canteen Food Menu
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // ========================================================
+  // VIEW 3: CHECKOUT & PICKUP SLOT BOOKING FORM
   // ========================================================
   return (
     <div className="container" style={{ maxWidth: '850px' }}>
@@ -407,14 +436,15 @@ const CheckoutSlotBooking = () => {
           </p>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', gap: '12px' }}>
-            {slots.map((slot) => {
-              const remaining = Math.max(0, slot.maxCapacity - (slot.currentBookings || 0));
-              const isSelected = selectedSlotId === slot._id;
+            {safeSlots.map((slot) => {
+              const slotId = slot._id || slot.id;
+              const remaining = Math.max(0, (slot.maxCapacity || 15) - (slot.currentBookings || 0));
+              const isSelected = selectedSlotId === slotId;
 
               return (
                 <div
-                  key={slot._id}
-                  onClick={() => setSelectedSlotId(slot._id)}
+                  key={slotId}
+                  onClick={() => setSelectedSlotId(slotId)}
                   style={{
                     border: `2px solid ${isSelected ? 'var(--primary)' : 'var(--border)'}`,
                     background: isSelected ? '#eff6ff' : '#ffffff',
@@ -440,12 +470,12 @@ const CheckoutSlotBooking = () => {
         {/* Step 2: Payment Method */}
         <div className="card" style={{ marginBottom: '24px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-            <ShieldCheck size={20} color="#2563eb" />
+            <Wallet size={20} color="#2563eb" />
             <h3 style={{ fontSize: '1.1rem', fontWeight: 700 }}>2. Select Payment Method</h3>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            {/* Wallet Option */}
+            {/* Digital Wallet Option */}
             <div
               onClick={() => setPaymentMethod('WALLET')}
               style={{
@@ -462,8 +492,12 @@ const CheckoutSlotBooking = () => {
                 <span style={{ fontWeight: 800 }}>Student Digital Wallet</span>
               </div>
               <div style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-                Current Balance: <strong style={{ color: walletBalance >= subtotal ? 'var(--success)' : 'var(--danger)' }}>Rs. {walletBalance}</strong>
+                Current Balance:{' '}
+                <strong style={{ color: walletBalance >= subtotal ? 'var(--success)' : 'var(--danger)' }}>
+                  Rs. {walletBalance}
+                </strong>
               </div>
+
               {walletBalance < subtotal && (
                 <button
                   type="button"
@@ -474,7 +508,8 @@ const CheckoutSlotBooking = () => {
                   className="btn btn-secondary btn-sm"
                   style={{ marginTop: '10px', fontSize: '0.75rem', width: '100%' }}
                 >
-                  <PlusCircle size={14} /> + Top-up Rs. 1,000
+                  <PlusCircle size={14} />
+                  <span>Quick Top-up +Rs. 1,000</span>
                 </button>
               )}
             </div>
